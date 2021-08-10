@@ -19,9 +19,9 @@ class MPP_User_Photos_Importer {
 	public function start() {
 		$path = plugin_dir_path( __FILE__ );
 		$home = getenv("HOME");
-		$photos_path = $home . 'public_html/photos';
+		$photos_path = $home . '/public_html/photos';
 		$logfile = $path . '/log.txt';
-		$csv_file = '251_images_to_import.csv';
+		$csv_file = '';
 		if(!is_file($logfile)){
 			touch($logfile);
 		}
@@ -48,7 +48,7 @@ class MPP_User_Photos_Importer {
 			else {
 				$gallery_id = mpp_create_gallery( array(
 				'creator_id'	 => $userid,
-				'title'        => 'Imported',
+				'title'        => 'My Photos',
             	'description'  => $caption,
 				'status'		 => 'private',
 				'component'		 => 'members',
@@ -61,7 +61,9 @@ class MPP_User_Photos_Importer {
 		if ($gallery_id) {
 			$result = mpp_import_file( $file_name, $gallery_id, array(
             	'description'  => $caption,
-				'title' => $image_title
+				'title' => $image_title,
+				'author' => $userid,
+				'user_id' => $userid,
 				));
 			if (is_wp_error( $result )) {
 				$logcontent = file_get_contents($logfile);
