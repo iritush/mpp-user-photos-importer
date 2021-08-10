@@ -33,7 +33,9 @@ class MPP_User_Photos_Importer {
 		$user_gallery_map = array ();
 		$total_imported = 0;
 		$total_failed_imports = 0;
-		foreach ($csv as $entry) {
+		$chunk_csv = array_chunk($csv, 2, true);
+		foreach ($chunk_csv as $sub_csv) {
+			foreach ($sub_csv as $entry) {
 			$username = $entry[0];
 			$the_user = get_user_by('login', $username);
 			$userid = $the_user->ID;
@@ -83,6 +85,7 @@ class MPP_User_Photos_Importer {
 			$logcontent .= "Failed to create pr retrieve gallery id for user " . $userid;
 			file_put_contents($logfile, $logcontent);
 			}
+		}
 		}
 		$message = "Completed with a total of " . $total_imported . " successful imports and " . $total_failed_imports . " failed imports";
 		$logcontent = file_get_contents($logfile);
