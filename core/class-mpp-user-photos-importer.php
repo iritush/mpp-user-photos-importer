@@ -8,7 +8,22 @@ class MPP_User_Photos_Importer {
 	 * MPP_User_Photos_Importer constructor.
 	 */
 	public function __construct() {
-		
+
+	}
+	public function logger($text_to_add) {
+		try {
+			$logfile = '';
+			if(!is_file($logfile)){
+				touch($logfile);
+			}
+			$logcontent = file_get_contents($logfile);
+			$logcontent .= $text_to_add;
+			file_put_contents($logfile, $logcontent);
+		}
+		catch  (exception $e) {
+			print "failed with exception " . $e . "\n";
+		}
+		return;
 	}
 
 	/**
@@ -17,80 +32,79 @@ class MPP_User_Photos_Importer {
 	 * @return boolean|\WP_Error
 	 */
 	public function start() {
-		$path = plugin_dir_path( __FILE__ );
-		$home = getenv("HOME");
-		$photos_path = $home . '/public_html/photos';
-		$logfile = $path . '/log.txt';
 		$csv_file = '';
-		if(!is_file($logfile)){
-			touch($logfile);
-		}
-		$logcontent = file_get_contents($logfile);
-		$logcontent .= "Starting\n";
-		file_put_contents($logfile, $logcontent);
-
-		$csv = array_map('str_getcsv', file($path . '/' . $csv_file));
-		$user_gallery_map = array ();
-		$total_imported = 0;
+		$csv = array_map('str_getcsv', file($csv_file));
+		$photos_path = '';
+		$current_user = '';
+		$user_image_map_array = array ();
+		$i=0;
+		$total_users = 0;
+		$total_imported=0;
+		$total_skipped_users = 0;
 		$total_failed_imports = 0;
-		$chunk_csv = array_chunk($csv, 2, true);
-		foreach ($chunk_csv as $sub_csv) {
-			foreach ($sub_csv as $entry) {
-			$username = $entry[0];
-			$the_user = get_user_by('login', $username);
-			$userid = $the_user->ID;
-			$town_name = $entry[1];
-			$file_name = $photos_path . '/LG_' . $entry[2];
-			$date_taken = $entry[3];
-			$caption = $entry[4];
-			$image_title = $town_name . "-" . $date_taken;
-			if ($user_gallery_map[$userid]) {
-				$gallery_id = $user_gallery_map[$userid];
-			}
-			else {
-				$gallery_id = mpp_create_gallery( array(
-				'creator_id'	 => $userid,
-				'title'        => 'My Photos',
-            	'description'  => $caption,
-				'status'		 => 'private',
-				'component'		 => 'members',
-				'component_id'	 => $userid,
-				'type'			 => 'photo',
-				) );
-				$user_gallery_map[$userid] = $gallery_id;
-			}
+		$this->logger ("New Import\n");
 
-		if ($gallery_id) {
-			$result = mpp_import_file( $file_name, $gallery_id, array(
-            	'description'  => $caption,
-				'title' => $image_title,
-				'author' => $userid,
-				'user_id' => $userid,
-				));
-			if (is_wp_error( $result )) {
-				$logcontent = file_get_contents($logfile);
-            	$logcontent .= "Failed to import file with the following error: " . $result;
-            	file_put_contents($logfile, $logcontent);
-				$total_failed_imports++;
+		foreach ($csv as $entry) {
+			if ($entry[0] != $current_user) {
+				$current_user = $entry[0];
+				$this->logger("current user: " . $current_user . "\n");
+				$i=0;
+				$total_users++;
+				$current_user_found = true;
+				$the_user = get_user_by('login', $current_user);
+				if (!$the_user) {
+					$this->logger ("couldn't find user " . $current_user . " skipping\n");
+					$current_user_found = false;
+					$total_skipped_users++;
+				}
+				else {
+					$user_image_map_array[$current_user]['userid'] = $the_user->ID;
+					$gallery_id = mpp_create_gallery( array(
+						'creator_id'	 => $user_image_map_array[$current_user]['userid'],
+						'title'        => 'My Photos',
+						// 'description'  => $caption,
+						'status'		 => 'private',
+						'component'		 => 'members',
+						'component_id'	 => $user_image_map_array[$current_user]['userid'],
+						'type'			 => 'photo',
+						) );
+						if (!$gallery_id) {
+							$this->logger ("Failed to create gallery for " . $current_user . "skipping\n");
+							$current_user_found = false;
+							$total_skipped_users++;
+						}
+						else {
+							$user_image_map_array[$current_user]['galleryid'] = $gallery_id;
+						}
+				}
 			}
-			else {
-				$logcontent = file_get_contents($logfile);
-            	$logcontent .= "Successfuly imported " . $file_name . " for user " . $userid . " into gallery id " . $gallery_id . "\n";
-            	file_put_contents($logfile, $logcontent);
-				$total_imported++;
-			}
+			if ($entry[0] == $current_user && $current_user_found) {
+				$this->logger("Importing image for user " . $current_user . "\n");
+				$user_image_map_array[$current_user][$i] = array();					
+				$user_image_map_array[$current_user][$i]['townname'] = $entry[1];
+				$user_image_map_array[$current_user][$i]['filename'] = $photos_path . '/LG_' . $entry[2];
+				$user_image_map_array[$current_user][$i]['datetaken'] = $entry[3];
+				$user_image_map_array[$current_user][$i]['caption'] = $entry[4];
+				$user_image_map_array[$current_user][$i]['imagetitle'] = $entry[1] . "-" . $entry[3];
+				
+				$result = mpp_import_file( $user_image_map_array[$current_user][$i]['filename'], $user_image_map_array[$current_user]['galleryid'], array(
+					'description'  => $user_image_map_array[$current_user][$i]['caption'],
+					'title' => $user_image_map_array[$current_user][$i]['imagetitle'],
+					'author' => $user_image_map_array[$current_user]['userid'],
+					'user_id' => $user_image_map_array[$current_user]['userid'],
+					));
+				if (is_wp_error( $result )) {
+					$this->logger ("Failed to import file " . $user_image_map_array[$current_user][$i]['filename'] . "for user " . $current_user . " gallery " . $user_image_map_array[$current_user]['galleryid'] . ": " . $result);
+					$total_failed_imports++;
+				}
+				else {
+					$this->logger ("Successfuly imported " . $file_name . " for user " . $user_image_map_array[$current_user]['userid'] . " into gallery id " . $gallery_id . "\n");
+					$total_imported++;
+				}
+				$i++;
+			}		
 		}
-		else {
-			$logcontent = file_get_contents($logfile);
-			$logcontent .= "Failed to create pr retrieve gallery id for user " . $userid;
-			file_put_contents($logfile, $logcontent);
-			}
-		}
-		}
-		$message = "Completed with a total of " . $total_imported . " successful imports and " . $total_failed_imports . " failed imports";
-		$logcontent = file_get_contents($logfile);
-		$logcontent .= $message;
-		file_put_contents($logfile, $logcontent);
-		return ($message);
+		$this->logger ("Completed with a total of " . $total_imported . " successful imports. " . $total_failed_imports . " failed imports, " . $total_skipped_users . " skipped users\n");
+		return ("done");
 	}
 }
